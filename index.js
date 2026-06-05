@@ -286,28 +286,28 @@ async function run() {
       res.json({ message: "Booking cancelled successfully" });
     });
 
-    app.patch("/add-room/:roomId", verifyToken, async (req, res) => {
-      const { roomId } = req.params;
-      const roomData = req.body;
-      const room = await roomCollection.findOne({ _id: new ObjectId(roomId) });
-      if (!room) {
-        return res.status(404).json({ message: "Room not found" });
-      }
-      await roomCollection.updateOne(
-        { _id: new ObjectId(roomId) },
-        {
-          $inc: { availableSeats: 1 },
-          $set: { lastEnrolled: new Date() },
-        },
-      );
-      const result = await add_roomCollection.insertOne({
-        ...roomData,
-        enrollAt: new Date(),
-        status: "confirmed",
-        bookingDate: roomData.bookingDate || new Date(),
-      });
-      res.send(result);
-    });
+    // app.patch("/add-room/:roomId", verifyToken, async (req, res) => {
+    //   const { roomId } = req.params;
+    //   const roomData = req.body;
+    //   const room = await roomCollection.findOne({ _id: new ObjectId(roomId) });
+    //   if (!room) {
+    //     return res.status(404).json({ message: "Room not found" });
+    //   }
+    //   await roomCollection.updateOne(
+    //     { _id: new ObjectId(roomId) },
+    //     {
+    //       $inc: { availableSeats: 1 },
+    //       $set: { lastEnrolled: new Date() },
+    //     },
+    //   );
+    //   const result = await add_roomCollection.insertOne({
+    //     ...roomData,
+    //     enrollAt: new Date(),
+    //     status: "confirmed",
+    //     bookingDate: roomData.bookingDate || new Date(),
+    //   });
+    //   res.send(result);
+    // });
 
     app.post("/all_rooms", verifyToken, async (req, res) => {
       const newRoom = req.body;
