@@ -146,13 +146,13 @@ async function run() {
         roomImage,
       } = req.body;
 
-      // Conflict check — same room, same date, confirmed booking, overlapping time
+     
       const conflict = await add_roomCollection.findOne({
         roomId: roomId,
         bookingDate: bookingDate,
         status: "confirmed",
         $or: [
-          // new booking starts inside existing
+          
           { startTime: { $lt: endTime }, endTime: { $gt: startTime } },
         ],
       });
@@ -189,7 +189,7 @@ async function run() {
       res.send(result);
     });
 
-    // ✅ Bookings GET — user এর সব bookings
+   
     app.get("/bookings/:userId", verifyToken, async (req, res) => {
       const { userId } = req.params;
        console.log("Bookings request আসছে, userId:", userId);
@@ -223,7 +223,7 @@ async function run() {
     app.patch("/bookings/:id/cancel", verifyToken, async (req, res) => {
       const { id } = req.params;
 
-      // booking খুঁজে বের করো
+     
       let booking;
       try {
         booking = await add_roomCollection.findOne({ _id: new ObjectId(id) });
@@ -235,12 +235,12 @@ async function run() {
         return res.status(404).json({ message: "Booking not found" });
       }
 
-      // ✅ verify করো — এই booking টা logged-in user এর কিনা
+
       if (booking.userId !== req.user.sub && booking.userId !== req.user.id) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      // ✅ already cancelled কিনা check করো
+     
       if (booking.status === "cancelled") {
         return res
           .status(400)
@@ -257,13 +257,13 @@ async function run() {
           .json({ message: "Cannot cancel a past booking" });
       }
 
-      // ✅ status → "cancelled" update করো
+    
       await add_roomCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { status: "cancelled", cancelledAt: new Date() } },
       );
 
-      // ✅ (Optional) room এর bookingCount কমাও
+  
       if (booking.roomId) {
         try {
           await roomCollection.updateOne(
@@ -330,23 +330,23 @@ async function run() {
       }
     });
 
-    app.delete("/add-room/:id", verifyToken, async (req, res) => {
-      const { id } = req.params;
-      const enrollment = await add_roomCollection.findOne({
-        _id: new ObjectId(id),
-      });
-      const roomId = enrollment?.roomId;
-      const result = await add_roomCollection.deleteOne({
-        _id: new ObjectId(id),
-      });
-      if (roomId) {
-        await roomCollection.updateOne(
-          { _id: new ObjectId(roomId) },
-          { $inc: { availableSeats: -1 } },
-        );
-      }
-      res.send(result);
-    });
+    // app.delete("/add-room/:id", verifyToken, async (req, res) => {
+    //   const { id } = req.params;
+    //   const enrollment = await add_roomCollection.findOne({
+    //     _id: new ObjectId(id),
+    //   });
+    //   const roomId = enrollment?.roomId;
+    //   const result = await add_roomCollection.deleteOne({
+    //     _id: new ObjectId(id),
+    //   });
+    //   if (roomId) {
+    //     await roomCollection.updateOne(
+    //       { _id: new ObjectId(roomId) },
+    //       { $inc: { availableSeats: -1 } },
+    //     );
+    //   }
+    //   res.send(result);
+    // });
   } finally {
   }
 }
