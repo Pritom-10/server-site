@@ -35,6 +35,7 @@ const verifyToken = async (req, res, next) => {
   }
   try {
     const JWKS = createRemoteJWKSet(
+      // ✅
       new URL("http://localhost:3000/api/auth/jwks"),
     );
     const { payload } = await jwtVerify(token, JWKS);
