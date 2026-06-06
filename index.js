@@ -35,7 +35,7 @@ const verifyToken = async (req, res, next) => {
   }
   try {
     const JWKS = createRemoteJWKSet(
-      // ✅
+     
       new URL("http://localhost:3000/api/auth/jwks"),
     );
     const { payload } = await jwtVerify(token, JWKS);
@@ -122,16 +122,6 @@ async function run() {
       const result = await roomCollection.find({ userId: userId }).toArray();
       res.send(result);
     });
-
-    // app.get("/add-room/:userId", verifyToken, async (req, res) => {
-    //   const { userId } = req.params;
-    //   const result = await add_roomCollection
-    //     .find({ userId: userId })
-    //     .toArray();
-    //   res.send(result);
-    // });
-
-  
     app.post("/bookings", verifyToken, async (req, res) => {
       const {
         roomId,
