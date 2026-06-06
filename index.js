@@ -321,23 +321,7 @@ async function run() {
       }
     });
 
-    // app.delete("/add-room/:id", verifyToken, async (req, res) => {
-    //   const { id } = req.params;
-    //   const enrollment = await add_roomCollection.findOne({
-    //     _id: new ObjectId(id),
-    //   });
-    //   const roomId = enrollment?.roomId;
-    //   const result = await add_roomCollection.deleteOne({
-    //     _id: new ObjectId(id),
-    //   });
-    //   if (roomId) {
-    //     await roomCollection.updateOne(
-    //       { _id: new ObjectId(roomId) },
-    //       { $inc: { availableSeats: -1 } },
-    //     );
-    //   }
-    //   res.send(result);
-    // });
+  
   } finally {
   }
 }
