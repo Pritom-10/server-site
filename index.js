@@ -1,5 +1,3 @@
-
-
 const express = require("express");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
@@ -9,19 +7,20 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const bcrypt = require("bcryptjs");
+const passport = require("passport");
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const port = process.env.PORT || 8000;
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
-    credentials: true, // ← cookie পাঠাতে দরকার
+    origin: process.env.CLIENT_URL,
+    credentials: true,
   }),
 );
 app.use(express.json());
 app.use(cookieParser());
 
-const uri =
-  "mongodb+srv://studyhook:hNHIlOPhxR3EWX6L@cluster0.ftqmtiq.mongodb.net/?appName=Cluster0";
+const uri = process.env.MONGODB_URI;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -31,83 +30,74 @@ const client = new MongoClient(uri, {
   },
 });
 
-
 const verifyToken = (req, res, next) => {
   const token = req.cookies?.token;
-  if (!token) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
+  if (!token) return res.status(401).json({ message: "Unauthorized" });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
-  } catch (error) {
+  } catch {
     return res.status(401).json({ message: "Unauthorized" });
   }
 };
 
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: true,
+  sameSite: "none",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const db = client.db("studyhookdb");
     const userCollection = db.collection("users");
     const roomCollection = db.collection("room");
     const add_roomCollection = db.collection("add-room");
 
+    // Register
     app.post("/register", async (req, res) => {
       const { name, email, password, photoURL } = req.body;
-
       if (!name || !email || !password) {
         return res.status(400).json({ message: "All fields are required" });
       }
-
       const existing = await userCollection.findOne({ email });
       if (existing) {
         return res.status(409).json({ message: "Email already registered" });
       }
-
       const hashedPassword = await bcrypt.hash(password, 10);
-
-      const result = await userCollection.insertOne({
+      await userCollection.insertOne({
         name,
         email,
         password: hashedPassword,
         photoURL: photoURL || "",
         createdAt: new Date(),
       });
-
       res
         .status(201)
         .json({ message: "Registration successful! Please login." });
     });
 
-    // ✅ Login
+    
     app.post("/login", async (req, res) => {
       const { email, password } = req.body;
-
       const user = await userCollection.findOne({ email });
       if (!user) {
         return res.status(401).json({ message: "Invalid email or password" });
       }
-
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
         return res.status(401).json({ message: "Invalid email or password" });
       }
-
       const token = jwt.sign(
         { id: user._id, email: user.email, name: user.name },
         process.env.JWT_SECRET,
         { expiresIn: "7d" },
       );
-
-      res.cookie("token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      });
-
+      res.cookie("token", token, cookieOptions);
       res.json({
         message: "Login successful",
         user: {
@@ -119,17 +109,17 @@ async function run() {
       });
     });
 
-    // ✅ Logout
+    // Logout
     app.post("/logout", (req, res) => {
       res.clearCookie("token", {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+        secure: true,
+        sameSite: "none",
       });
       res.json({ message: "Logged out successfully" });
     });
 
-    // ✅ Get current user (session check)
+    // Me
     app.get("/me", verifyToken, async (req, res) => {
       const user = await userCollection.findOne(
         { _id: new ObjectId(req.user.id) },
@@ -143,7 +133,6 @@ async function run() {
     app.get("/all_rooms", async (req, res) => {
       const { search, amenities, minPrice, maxPrice } = req.query;
       const query = {};
-
       if (search) {
         query.$or = [
           { name: { $regex: search, $options: "i" } },
@@ -159,7 +148,6 @@ async function run() {
         if (minPrice) query.hourlyRate.$gte = parseFloat(minPrice);
         if (maxPrice) query.hourlyRate.$lte = parseFloat(maxPrice);
       }
-
       const result = await roomCollection.find(query).toArray();
       res.send(result);
     });
@@ -182,7 +170,6 @@ async function run() {
       const updatedData = req.body;
       const room = await roomCollection.findOne({ _id: new ObjectId(roomId) });
       if (!room) return res.status(404).json({ message: "Room not found" });
-
       const result = await roomCollection.updateOne(
         { _id: new ObjectId(roomId) },
         {
@@ -221,10 +208,9 @@ async function run() {
       }
     });
 
-    // My Listings
     app.get("/listing/:userId", verifyToken, async (req, res) => {
       const { userId } = req.params;
-      const result = await roomCollection.find({ userId: userId }).toArray();
+      const result = await roomCollection.find({ userId }).toArray();
       res.send(result);
     });
 
@@ -280,14 +266,12 @@ async function run() {
           { $inc: { seatCapacity: -1 } },
         );
       }
-
       res.send(result);
     });
 
     app.get("/bookings/:userId", verifyToken, async (req, res) => {
       const { userId } = req.params;
       const bookings = await add_roomCollection.find({ userId }).toArray();
-
       const populated = await Promise.all(
         bookings.map(async (booking) => {
           let roomData = null;
@@ -305,34 +289,27 @@ async function run() {
           };
         }),
       );
-
       res.send(populated);
     });
 
     app.patch("/bookings/:id/cancel", verifyToken, async (req, res) => {
       const { id } = req.params;
-
       let booking;
       try {
         booking = await add_roomCollection.findOne({ _id: new ObjectId(id) });
       } catch {
         return res.status(400).json({ message: "Invalid booking ID" });
       }
-
       if (!booking)
         return res.status(404).json({ message: "Booking not found" });
-
-      // ✅ req.user.id দিয়ে check
       if (booking.userId !== req.user.id.toString()) {
         return res.status(403).json({ message: "Forbidden" });
       }
-
       if (booking.status === "cancelled") {
         return res
           .status(400)
           .json({ message: "Booking is already cancelled" });
       }
-
       const bookingDate = new Date(booking.bookingDate);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -341,12 +318,10 @@ async function run() {
           .status(400)
           .json({ message: "Cannot cancel a past booking" });
       }
-
       await add_roomCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { status: "cancelled", cancelledAt: new Date() } },
       );
-
       if (booking.roomId) {
         try {
           await roomCollection.updateOne(
@@ -355,7 +330,6 @@ async function run() {
           );
         } catch {}
       }
-
       res.json({ message: "Booking cancelled successfully" });
     });
   } finally {
@@ -364,29 +338,20 @@ async function run() {
 
 run().catch(console.dir);
 
-app.get("/", (req, res) => {
-  res.send("Hello World!");
-});
-
-const passport = require("passport");
-const GoogleStrategy = require("passport-google-oauth20").Strategy;
-
 passport.use(
   new GoogleStrategy(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "/auth/google/callback",
+      callbackURL: `${process.env.BACKEND_URL}/auth/google/callback`,
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
         const db = client.db("studyhookdb");
         const userCollection = db.collection("users");
-
         let user = await userCollection.findOne({
           email: profile.emails[0].value,
         });
-
         if (!user) {
           const result = await userCollection.insertOne({
             name: profile.displayName,
@@ -397,7 +362,6 @@ passport.use(
           });
           user = await userCollection.findOne({ _id: result.insertedId });
         }
-
         done(null, user);
       } catch (err) {
         done(err, null);
@@ -408,7 +372,6 @@ passport.use(
 
 app.use(passport.initialize());
 
-// Google login শুরু
 app.get(
   "/auth/google",
   passport.authenticate("google", {
@@ -417,33 +380,29 @@ app.get(
   }),
 );
 
-// Google callback
 app.get(
   "/auth/google/callback",
   passport.authenticate("google", {
     session: false,
-    failureRedirect: `${process.env.FRONTEND_URL}/login`,
+    failureRedirect: `${process.env.CLIENT_URL}/login`,
   }),
   (req, res) => {
     const user = req.user;
-
     const token = jwt.sign(
       { id: user._id, email: user.email, name: user.name },
       process.env.JWT_SECRET,
       { expiresIn: "7d" },
     );
-
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
+    res.cookie("token", token, cookieOptions);
+    res.redirect(`${process.env.CLIENT_URL}/auth/success`);
   },
 );
+
+app.get("/", (req, res) => {
+  res.send("Hello World!");
+});
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+module.exports = app;
