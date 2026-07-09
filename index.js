@@ -42,6 +42,28 @@ const verifyToken = (req, res, next) => {
   }
 };
 
+const verifyCookie = async (req, res, next) => {
+  const cookieHeader = req.headers.cookie || "";
+  const tokenMatch = cookieHeader.match(/token=([^;]+)/);
+  const token = tokenMatch?.[1];
+
+  if (!token) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  try {
+    const JWKS = createRemoteJWKSet(
+      new URL(`${process.env.FRONTEND_URL}/api/auth/jwks`),
+    );
+    const { payload } = await jwtVerify(token, JWKS);
+    req.user = payload;
+    next();
+  } catch (error) {
+    console.error("Cookie token validation failed:", error);
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+};
+
 
 const cookieOptions = {
   httpOnly: true,
@@ -79,6 +101,23 @@ async function run() {
       res
         .status(201)
         .json({ message: "Registration successful! Please login." });
+    });
+
+    app.get("/me", verifyCookie, async (req, res) => {
+      console.log("req.user in /me:", req.user); // debug
+
+      const userId = req.user?.sub || req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      res.json({
+        _id: userId,
+        name: req.user?.name,
+        email: req.user?.email,
+        photoURL: req.user?.image || req.user?.picture || "",
+      });
     });
 
     
