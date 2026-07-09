@@ -52,13 +52,13 @@ const cookieOptions = {
 
 async function run() {
   try {
-    // await client.connect();
+    await client.connect();
     const db = client.db("studyhookdb");
     const userCollection = db.collection("users");
     const roomCollection = db.collection("room");
     const add_roomCollection = db.collection("add-room");
 
-    // Register
+
     app.post("/register", async (req, res) => {
       const { name, email, password, photoURL } = req.body;
       if (!name || !email || !password) {
