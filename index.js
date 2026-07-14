@@ -30,9 +30,28 @@ const client = new MongoClient(uri, {
   },
 });
 
+// ✅ FIX: একটাই verifyToken — cookie অথবা Authorization header দুইটাই check করে
 const verifyToken = (req, res, next) => {
-  const token = req.cookies?.token;
+  // cookie থেকে token নাও
+  let token = req.cookies?.token;
+
+  // cookie না থাকলে Authorization header থেকে নাও
+  if (!token) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    }
+  }
+
+  // Cookie header manually parse করো (server action এর জন্য)
+  if (!token) {
+    const cookieHeader = req.headers.cookie || "";
+    const tokenMatch = cookieHeader.match(/token=([^;]+)/);
+    token = tokenMatch?.[1];
+  }
+
   if (!token) return res.status(401).json({ message: "Unauthorized" });
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
@@ -42,33 +61,11 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-const verifyCookie = async (req, res, next) => {
-  const cookieHeader = req.headers.cookie || "";
-  const tokenMatch = cookieHeader.match(/token=([^;]+)/);
-  const token = tokenMatch?.[1];
-
-  if (!token) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-
-  try {
-    const JWKS = createRemoteJWKSet(
-      new URL(`${process.env.FRONTEND_URL}/api/auth/jwks`),
-    );
-    const { payload } = await jwtVerify(token, JWKS);
-    req.user = payload;
-    next();
-  } catch (error) {
-    console.error("Cookie token validation failed:", error);
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-};
-
-
+// ✅ FIX: production/development এ আলাদা cookie options
 const cookieOptions = {
   httpOnly: true,
-  secure: true,
-  sameSite: "none",
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
@@ -79,7 +76,6 @@ async function run() {
     const userCollection = db.collection("users");
     const roomCollection = db.collection("room");
     const add_roomCollection = db.collection("add-room");
-
 
     app.post("/register", async (req, res) => {
       const { name, email, password, photoURL } = req.body;
@@ -103,24 +99,6 @@ async function run() {
         .json({ message: "Registration successful! Please login." });
     });
 
-    app.get("/me", verifyCookie, async (req, res) => {
-      console.log("req.user in /me:", req.user); // debug
-
-      const userId = req.user?.sub || req.user?.id;
-
-      if (!userId) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-
-      res.json({
-        _id: userId,
-        name: req.user?.name,
-        email: req.user?.email,
-        photoURL: req.user?.image || req.user?.picture || "",
-      });
-    });
-
-    
     app.post("/login", async (req, res) => {
       const { email, password } = req.body;
       const user = await userCollection.findOne({ email });
@@ -139,6 +117,7 @@ async function run() {
       res.cookie("token", token, cookieOptions);
       res.json({
         message: "Login successful",
+        token: token, // ✅ token response এ পাঠাও
         user: {
           id: user._id,
           name: user.name,
@@ -148,27 +127,27 @@ async function run() {
       });
     });
 
-    // Logout
     app.post("/logout", (req, res) => {
       res.clearCookie("token", {
         httpOnly: true,
-        secure: true,
-        sameSite: "none",
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       });
       res.json({ message: "Logged out successfully" });
     });
 
-    // Me
+    // ✅ FIX: একটাই /me route
     app.get("/me", verifyToken, async (req, res) => {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
       const user = await userCollection.findOne(
-        { _id: new ObjectId(req.user.id) },
+        { _id: new ObjectId(userId) },
         { projection: { password: 0 } },
       );
       if (!user) return res.status(404).json({ message: "User not found" });
       res.json(user);
     });
 
-    // All Rooms
     app.get("/all_rooms", async (req, res) => {
       const { search, amenities, minPrice, maxPrice } = req.query;
       const query = {};
@@ -253,7 +232,6 @@ async function run() {
       res.send(result);
     });
 
-    // Bookings
     app.post("/bookings", verifyToken, async (req, res) => {
       const {
         roomId,
